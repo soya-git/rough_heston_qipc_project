@@ -2,12 +2,12 @@ import numpy as np
 import pytest
 
 from rough_heston_qipc import (
+    RoughHestonModel,
     RoughHestonParams,
     composite_simpson,
     gauss_legendre,
     quadratic_implicit_corrector,
     riccati_coefficients,
-    rough_heston_explicit_pc,
     rough_heston_new,
     timed_price,
 )
@@ -37,25 +37,39 @@ def test_quadratic_implicit_corrector_residual_is_small():
     assert np.max(np.abs(residual)) < 1e-10
 
 
-def test_rough_heston_new_returns_finite_price():
-    price = rough_heston_new(12, 20)
+def test_model_calculate_returns_finite_price():
+    model = RoughHestonModel(RoughHestonParams())
+    price = model.calculate(12, 20)
     assert np.isfinite(price)
     assert price >= 0.0
 
 
 def test_return_details_shape():
-    price, details = rough_heston_new(10, 12, return_details=True)
+    model = RoughHestonModel()
+    price, details = model.calculate(10, 12, return_details=True)
     assert np.isfinite(price)
     assert details["h"].shape == (10, 13)
     assert details["numF"].shape == (10, 13)
     assert details["u"].shape == (10,)
+    assert details["method"] == "quadratic_implicit"
 
 
-def test_new_and_explicit_are_close_on_small_grid():
-    params = RoughHestonParams()
-    p_new = rough_heston_new(12, 20, params=params)
-    p_old = rough_heston_explicit_pc(12, 20, params=params)
+def test_solver_methods_are_close_on_small_grid():
+    model = RoughHestonModel(RoughHestonParams())
+    p_new = model.calculate(12, 20, method="quadratic_implicit")
+    p_old = model.calculate(12, 20, method="explicit")
     assert abs(p_new - p_old) < 5e-3
+
+
+def test_unknown_solver_method_raises():
+    model = RoughHestonModel()
+    with pytest.raises(ValueError):
+        model.calculate(12, 20, method="unknown")
+
+
+def test_rough_heston_new_wrapper_uses_model():
+    model = RoughHestonModel()
+    assert rough_heston_new(12, 20) == model.calculate(12, 20)
 
 
 def test_timed_price_signature():

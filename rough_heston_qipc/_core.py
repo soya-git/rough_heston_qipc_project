@@ -1,17 +1,16 @@
-"""rough_heston_new.py
+"""Rough Heston option pricing.
 
 Rough Heston option pricing with a Quadratic-Implicit Fractional Adams
 Predictor-Corrector solver.
 
 Main entry points
 -----------------
-rough_heston_new(NOuter, NInner, params=None)
-    Price one European call option under the same parameter convention as the
-    uploaded MATLAB roughHeston.m, but replace the explicit corrector by a
-    closed-form quadratic implicit corrector.
+RoughHestonModel(params).calculate(NOuter, NInner, method="quadratic_implicit")
+    Price one European call option under a Rough Heston-style characteristic
+    function representation.
 
 run_grid_test_new()
-    Python equivalent of test.m, using rough_heston_new.
+    Python equivalent of test.m, using the default model solver.
 
 This file is self-contained except for NumPy.
 """
@@ -20,10 +19,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import gamma
-from typing import Tuple
+from typing import Literal, Tuple
 import time
 
 import numpy as np
+
+
+SolverMethod = Literal["quadratic_implicit", "explicit"]
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,34 @@ class RoughHestonParams:
     R: float = 1.5        # Fourier damping parameter
     u_lower: float = 0.0
     u_upper: float = 25.0
+
+
+@dataclass(frozen=True)
+class RoughHestonModel:
+    """Rough Heston option pricing model.
+
+    Parameters are fixed when the model is created. Pricing is performed with
+    calculate(), which can choose between the quadratic-implicit solver and the
+    original explicit predictor-corrector baseline.
+    """
+
+    params: RoughHestonParams = RoughHestonParams()
+
+    def calculate(
+        self,
+        NOuter: int,
+        NInner: int,
+        method: SolverMethod = "quadratic_implicit",
+        return_details: bool = False,
+    ):
+        """Price a European call option under the configured parameters."""
+        return _calculate_price(
+            NOuter=NOuter,
+            NInner=NInner,
+            params=self.params,
+            method=method,
+            return_details=return_details,
+        )
 
 
 # ============================================================
@@ -160,30 +190,18 @@ def quadratic_implicit_corrector(
     return corrector
 
 
-# ============================================================
-# Main solver
-# ============================================================
-
-def rough_heston_new(
+def _calculate_price(
     NOuter: int,
     NInner: int,
-    params: RoughHestonParams | None = None,
+    params: RoughHestonParams,
+    method: SolverMethod,
     return_details: bool = False,
 ):
-    """Price a European call under rough Heston using the new method.
+    """Price a European call under rough Heston.
 
-    This is the new method:
-        Quadratic-Implicit Fractional Adams Predictor-Corrector.
-
-    Difference from the original active MATLAB implementation:
-        Original explicit corrector:
-            h_{k+1} = G_k + a*F(h_{k+1}^P)
-
-        New quadratic implicit corrector:
-            h_{k+1} = G_k + a*F(h_{k+1})
-
-        Since F(h)=A+B*h+C*h^2, the implicit equation is solved exactly as a
-        quadratic equation at each time step and Fourier node.
+    The quadratic-implicit method solves h = G + a*F(h) exactly as a
+    quadratic equation at each time step and Fourier node. The explicit method
+    keeps the original predictor-corrector endpoint update h = G + a*F(h^P).
 
     Parameters
     ----------
@@ -192,8 +210,10 @@ def rough_heston_new(
     NInner : int
         Number of time steps for fractional Adams recursion. Must be even
         because Simpson quadrature is used at the end.
-    params : RoughHestonParams, optional
+    params : RoughHestonParams
         Model and numerical parameters.
+    method : {"quadratic_implicit", "explicit"}
+        Corrector method used in the fractional Adams recursion.
     return_details : bool
         If True, return (price, details_dict). Otherwise return price.
 
@@ -211,7 +231,10 @@ def rough_heston_new(
     if NInner % 2 != 0:
         raise ValueError("NInner must be even because composite Simpson is used.")
 
-    p = params or RoughHestonParams()
+    if method not in ("quadratic_implicit", "explicit"):
+        raise ValueError("method must be 'quadratic_implicit' or 'explicit'.")
+
+    p = params
 
     # Fourier quadrature grid.
     u, w = gauss_legendre(NOuter, p.u_lower, p.u_upper)
@@ -267,15 +290,18 @@ def rough_heston_new(
             corrector_history_weights = a_mid[-k:]
             G = a0_values[k] * F0 + numF[:, 1 : k + 1] @ corrector_history_weights
 
-        # New method: solve h = G + a*F(h) exactly as a quadratic equation.
-        corrector = quadratic_implicit_corrector(
-            G=G,
-            predictor=predictor,
-            A=A,
-            B=B,
-            C=C,
-            a_endpoint=a_constant,
-        )
+        if method == "quadratic_implicit":
+            # New method: solve h = G + a*F(h) exactly as a quadratic equation.
+            corrector = quadratic_implicit_corrector(
+                G=G,
+                predictor=predictor,
+                A=A,
+                B=B,
+                C=C,
+                a_endpoint=a_constant,
+            )
+        else:
+            corrector = G + a_constant * F(predictor)
 
         h[:, k + 1] = corrector
         numF[:, k + 1] = F(corrector)
@@ -300,115 +326,9 @@ def rough_heston_new(
             "numF": numF,
             "L": L,
             "params": p,
+            "method": method,
         }
         return price, details
 
     return price
 
-
-# ============================================================
-# Optional: original explicit PC for comparison
-# ============================================================
-
-def rough_heston_explicit_pc(
-    NOuter: int,
-    NInner: int,
-    params: RoughHestonParams | None = None,
-) -> float:
-    """Original active MATLAB-style explicit predictor-corrector.
-
-    This function is included only for benchmarking against rough_heston_new.
-    """
-    p = params or RoughHestonParams()
-    if NInner % 2 != 0:
-        raise ValueError("NInner must be even because composite Simpson is used.")
-
-    u, w = gauss_legendre(NOuter, p.u_lower, p.u_upper)
-    uL = u.astype(np.complex128) - 1j * p.R
-    A, B, C = riccati_coefficients(uL, p.lam, p.rho, p.nu)
-
-    def F(h: np.ndarray) -> np.ndarray:
-        return A + B * h + C * h**2
-
-    h = np.zeros((NOuter, NInner + 1), dtype=np.complex128)
-    numF = np.zeros_like(h)
-    numF[:, 0] = F(h[:, 0])
-    F0 = numF[:, 0]
-
-    delta = p.t / NInner
-    a_constant = delta**p.alpha / gamma(p.alpha + 2.0)
-    b_constant = delta**p.alpha / gamma(p.alpha + 1.0)
-
-    k_arr = np.arange(NInner, dtype=float)
-    a0_values = a_constant * (
-        k_arr ** (p.alpha + 1.0) - (k_arr - p.alpha) * (k_arr + 1.0) ** p.alpha
-    )
-
-    a_all = np.arange(NInner, -1, -1, dtype=float) ** (p.alpha + 1.0)
-    a_diff_order1 = a_all[:NInner] - a_all[1 : NInner + 1]
-    a_diff_order2 = a_diff_order1[: NInner - 1] - a_diff_order1[1:NInner]
-    a_mid = a_constant * a_diff_order2
-
-    b_all = np.arange(NInner, -1, -1, dtype=float) ** p.alpha
-    b_diff = b_all[:NInner] - b_all[1 : NInner + 1]
-    b_coef = b_constant * b_diff
-
-    for k in range(NInner):
-        predictor = numF[:, : k + 1] @ b_coef[-(k + 1) :]
-
-        if k == 0:
-            G = a0_values[k] * F0
-        else:
-            G = a0_values[k] * F0 + numF[:, 1 : k + 1] @ a_mid[-k:]
-
-        corrector = G + a_constant * F(predictor)
-
-        h[:, k + 1] = corrector
-        numF[:, k + 1] = F(corrector)
-
-    _, w_inner = composite_simpson(NInner, 0.0, p.t)
-    L = np.exp(p.theta * p.lam * (h @ w_inner) + p.z * (numF @ w_inner))
-    payoff_transform = p.S0 * fgc(p.K / p.S0, 1j * p.R - u)
-    price = 2.0 * np.exp(-p.r * p.t) / (2.0 * np.pi) * np.sum(
-        w * np.real(L * payoff_transform)
-    )
-    return float(np.real(price))
-
-
-# ============================================================
-# Test helpers
-# ============================================================
-
-def run_grid_test_new() -> np.ndarray:
-    """Equivalent to MATLAB test.m, but using rough_heston_new."""
-    nl = np.arange(25, 71, 5)
-    Nl = np.arange(100, 2001, 100)
-    result = np.zeros((len(nl), len(Nl)), dtype=float)
-
-    for i, n_outer in enumerate(nl):
-        for j, n_inner in enumerate(Nl):
-            result[i, j] = rough_heston_new(int(n_outer), int(n_inner))
-
-    return result
-
-
-def timed_price(NOuter: int = 50, NInner: int = 500) -> tuple[float, float]:
-    """Return (price, elapsed_seconds) for rough_heston_new."""
-    start = time.perf_counter()
-    price = rough_heston_new(NOuter, NInner)
-    elapsed = time.perf_counter() - start
-    return price, elapsed
-
-
-if __name__ == "__main__":
-    price, elapsed = timed_price(50, 500)
-    print(f"rough_heston_new price: {price:.12f}")
-    print(f"Elapsed time: {elapsed:.6f} seconds")
-
-    # Optional comparison with the original explicit corrector.
-    start = time.perf_counter()
-    price_old = rough_heston_explicit_pc(500, 5000)
-    elapsed_old = time.perf_counter() - start
-    print(f"explicit PC price:       {price_old:.12f}")
-    print(f"Explicit PC elapsed:     {elapsed_old:.6f} seconds")
-    print(f"Difference new - old:    {price - price_old:.12e}")

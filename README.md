@@ -25,16 +25,19 @@ pip install -e ".[dev]"
 ## Quick start
 
 ```python
-from rough_heston_qipc import rough_heston_new, timed_price, RoughHestonParams
+from rough_heston_qipc import RoughHestonModel, RoughHestonParams, timed_price
 
-price = rough_heston_new(NOuter=50, NInner=500)
+model = RoughHestonModel(RoughHestonParams())
+price = model.calculate(NOuter=50, NInner=500)
 print(f"price = {price:.12f}")
 
 price, elapsed = timed_price(NOuter=50, NInner=500)
 print(f"price = {price:.12f}, elapsed = {elapsed:.4f} seconds")
 
 params = RoughHestonParams(S0=1.0, K=1.0, alpha=0.6, rho=-0.5, nu=0.05)
-custom_price = rough_heston_new(50, 500, params=params)
+custom_model = RoughHestonModel(params)
+custom_price = custom_model.calculate(50, 500)
+explicit_baseline = custom_model.calculate(50, 500, method="explicit")
 print(custom_price)
 ```
 
@@ -88,37 +91,27 @@ Dataclass containing model and numerical parameters.
 | `u_lower` | `float` | `0.0` | Lower Fourier integration bound |
 | `u_upper` | `float` | `25.0` | Upper Fourier integration bound |
 
-### `rough_heston_new(NOuter, NInner, params=None, return_details=False)`
+### `RoughHestonModel(params=RoughHestonParams())`
 
-Prices one European call option with the quadratic-implicit fractional Adams method.
+Model object that stores one `RoughHestonParams` instance and exposes pricing through `calculate`.
+
+### `RoughHestonModel.calculate(NOuter, NInner, method="quadratic_implicit", return_details=False)`
+
+Prices one European call option.
 
 Parameters:
 
-- `NOuter: int` — number of Gauss-Legendre nodes for Fourier integration.
-- `NInner: int` — number of time steps for the fractional Adams recursion. Must be even because Simpson quadrature is used for the final time integral.
-- `params: RoughHestonParams | None` — optional model and numerical parameters.
-- `return_details: bool` — if `True`, returns `(price, details)` instead of only `price`.
+- `NOuter: int` - number of Gauss-Legendre nodes for Fourier integration.
+- `NInner: int` - number of time steps for the fractional Adams recursion. Must be even because Simpson quadrature is used for the final time integral.
+- `method: str` - solver choice. Use `"quadratic_implicit"` for the new quadratic-implicit method or `"explicit"` for the original explicit predictor-corrector baseline.
+- `return_details: bool` - if `True`, returns `(price, details)` instead of only `price`.
 
 Returns:
 
 - `float` if `return_details=False`.
-- `(float, dict)` if `return_details=True`; details include Fourier nodes, weights, Riccati grid values, and characteristic-function terms.
-
-### `rough_heston_explicit_pc(NOuter, NInner, params=None)`
-
-Benchmark implementation of the original explicit predictor-corrector update. This is useful for comparing accuracy and runtime against the new quadratic-implicit method.
-
-### `timed_price(NOuter=50, NInner=500)`
-
-Returns `(price, elapsed_seconds)` for the new method.
-
-### `run_grid_test_new()`
-
-Runs a grid of Fourier and time discretizations and returns a NumPy array of prices. This is mainly intended for convergence experiments.
+- `(float, dict)` if `return_details=True`; details include Fourier nodes, weights, Riccati grid values, characteristic-function terms, and the selected method.
 
 ## Demo notebook
-
-Replace `YOUR_GITHUB_USERNAME` with your GitHub username after uploading the repository:
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YOUR_GITHUB_USERNAME/rough-heston-qipc/blob/main/notebooks/demo.ipynb)
 
@@ -136,7 +129,7 @@ Use the demo notebook or `examples/benchmark.py` to evaluate:
 
 1. **Convergence in time steps**: fix `NOuter` and vary `NInner`.
 2. **Fourier quadrature convergence**: fix `NInner` and vary `NOuter`.
-3. **Runtime comparison**: compare `rough_heston_new` and `rough_heston_explicit_pc` on the same grid.
+3. **Runtime comparison**: compare `method="quadratic_implicit"` and `method="explicit"` on the same model and grid.
 4. **Accuracy-speed tradeoff**: use a high-resolution result as a reference and plot absolute error against runtime.
 5. **Parameter stress tests**: vary `alpha`, `rho`, and `nu` to test robustness under roughness, leverage, and vol-of-vol changes.
 
@@ -144,22 +137,22 @@ Use the demo notebook or `examples/benchmark.py` to evaluate:
 
 ```text
 rough-heston-qipc/
-├── rough_heston_qipc/
-│   ├── __init__.py
-│   └── _core.py
-├── tests/
-│   └── test_rough_heston_qipc.py
-├── notebooks/
-│   └── demo.ipynb
-├── examples/
-│   └── benchmark.py
-├── .github/
-│   └── workflows/
-│       ├── ci.yml
-│       └── publish.yml
-├── pyproject.toml
-├── README.md
-└── LICENSE
+|-- rough_heston_qipc/
+|   |-- __init__.py
+|   `-- _core.py
+|-- tests/
+|   `-- test_rough_heston_qipc.py
+|-- notebooks/
+|   `-- demo.ipynb
+|-- examples/
+|   `-- benchmark.py
+|-- .github/
+|   `-- workflows/
+|       |-- ci.yml
+|       `-- publish.yml
+|-- pyproject.toml
+|-- README.md
+`-- LICENSE
 ```
 
 ## Publishing checklist
