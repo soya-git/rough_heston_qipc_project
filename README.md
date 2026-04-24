@@ -155,16 +155,6 @@ rough-heston-qipc/
 `-- LICENSE
 ```
 
-## Publishing checklist
-
-1. Replace `YOUR_GITHUB_USERNAME` in `README.md` and `pyproject.toml`.
-2. Replace `your.email@example.com` in `pyproject.toml`.
-3. Push the repository to GitHub.
-4. Create a PyPI pending trusted publisher for project name `rough-heston-qipc`.
-5. Create a GitHub environment named `pypi`.
-6. Draft a GitHub release with a tag such as `v0.1.0`.
-7. Publish the release to trigger `.github/workflows/publish.yml`.
-
 ## License
 
 MIT License. See `LICENSE` for details.

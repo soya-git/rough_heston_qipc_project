@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Rough Heston option pricing with a quadratic-implicit fractional Adams predictor-corrector solver."
 readme = "README.md"
 license = { text = "MIT" }
-authors = [{ name = "Yixuan Zhang", email = "your.email@example.com" }]
+authors = [{ name = "soya-git", email = "2974133775@qq.com" }]
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.24"]
 keywords = ["rough heston", "option pricing", "fractional adams", "quantitative finance", "numerical methods"]
@@ -28,9 +28,9 @@ demo = ["matplotlib>=3.8"]
 dev = ["pytest>=8.0", "matplotlib>=3.8", "build>=1.2"]
 
 [project.urls]
-Homepage = "https://github.com/YOUR_GITHUB_USERNAME/rough-heston-qipc"
-Repository = "https://github.com/YOUR_GITHUB_USERNAME/rough-heston-qipc"
-Issues = "https://github.com/YOUR_GITHUB_USERNAME/rough-heston-qipc/issues"
+Homepage = "https://github.com/soya-git/rough-heston-qipc"
+Repository = "https://github.com/soya-git/rough-heston-qipc"
+Issues = "https://github.com/soya-git/rough-heston-qipc/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
