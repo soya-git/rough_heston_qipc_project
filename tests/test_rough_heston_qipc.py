@@ -8,8 +8,6 @@ from rough_heston_qipc import (
     gauss_legendre,
     quadratic_implicit_corrector,
     riccati_coefficients,
-    rough_heston_new,
-    timed_price,
 )
 
 
@@ -65,14 +63,3 @@ def test_unknown_solver_method_raises():
     model = RoughHestonModel()
     with pytest.raises(ValueError):
         model.calculate(12, 20, method="unknown")
-
-
-def test_rough_heston_new_wrapper_uses_model():
-    model = RoughHestonModel()
-    assert rough_heston_new(12, 20) == model.calculate(12, 20)
-
-
-def test_timed_price_signature():
-    price, elapsed = timed_price(10, 12)
-    assert np.isfinite(price)
-    assert elapsed >= 0.0
