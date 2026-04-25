@@ -5,7 +5,7 @@ Predictor-Corrector solver.
 
 Main entry points
 -----------------
-RoughHestonModel(params).calculate(NOuter, NInner, method="quadratic_implicit")
+RoughHestonModel(params).calculate(NOuter, NInner, method="implicit")
     Price one European call option under a Rough Heston-style characteristic
     function representation.
 
@@ -25,7 +25,7 @@ import time
 import numpy as np
 
 
-SolverMethod = Literal["quadratic_implicit", "explicit"]
+SolverMethod = Literal["implicit", "explicit"]
 
 
 @dataclass(frozen=True)
@@ -63,7 +63,7 @@ class RoughHestonModel:
         self,
         NOuter: int,
         NInner: int,
-        method: SolverMethod = "quadratic_implicit",
+        method: SolverMethod = "implicit",
         return_details: bool = False,
     ):
         """Price a European call option under the configured parameters."""
@@ -199,7 +199,7 @@ def _calculate_price(
 ):
     """Price a European call under rough Heston.
 
-    The quadratic-implicit method solves h = G + a*F(h) exactly as a
+    The implicit method solves h = G + a*F(h) exactly as a
     quadratic equation at each time step and Fourier node. The explicit method
     keeps the original predictor-corrector endpoint update h = G + a*F(h^P).
 
@@ -212,7 +212,7 @@ def _calculate_price(
         because Simpson quadrature is used at the end.
     params : RoughHestonParams
         Model and numerical parameters.
-    method : {"quadratic_implicit", "explicit"}
+    method : {"implicit", "explicit"}
         Corrector method used in the fractional Adams recursion.
     return_details : bool
         If True, return (price, details_dict). Otherwise return price.
@@ -231,8 +231,8 @@ def _calculate_price(
     if NInner % 2 != 0:
         raise ValueError("NInner must be even because composite Simpson is used.")
 
-    if method not in ("quadratic_implicit", "explicit"):
-        raise ValueError("method must be 'quadratic_implicit' or 'explicit'.")
+    if method not in ("implicit", "explicit"):
+        raise ValueError("method must be 'implicit' or 'explicit'.")
 
     p = params
 
@@ -290,7 +290,7 @@ def _calculate_price(
             corrector_history_weights = a_mid[-k:]
             G = a0_values[k] * F0 + numF[:, 1 : k + 1] @ corrector_history_weights
 
-        if method == "quadratic_implicit":
+        if method == "implicit":
             # New method: solve h = G + a*F(h) exactly as a quadratic equation.
             corrector = quadratic_implicit_corrector(
                 G=G,
@@ -331,4 +331,3 @@ def _calculate_price(
         return price, details
 
     return price
-

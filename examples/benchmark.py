@@ -16,10 +16,10 @@ def main() -> None:
     grids = [(25, 100), (35, 200), (50, 500), (120, 1000)]
     model = RoughHestonModel()
 
-    print("NOuter  NInner  new_price      new_time    explicit_price explicit_time abs_diff")
+    print("NOuter  NInner  implicit_price implicit_time explicit_price explicit_time abs_diff")
     for n_outer, n_inner in grids:
         start = time.perf_counter()
-        p_new = model.calculate(n_outer, n_inner, method="quadratic_implicit")
+        p_new = model.calculate(n_outer, n_inner, method="implicit")
         t_new = time.perf_counter() - start
 
         start = time.perf_counter()

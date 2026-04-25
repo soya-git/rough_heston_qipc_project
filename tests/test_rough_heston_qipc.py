@@ -49,12 +49,12 @@ def test_return_details_shape():
     assert details["h"].shape == (10, 13)
     assert details["numF"].shape == (10, 13)
     assert details["u"].shape == (10,)
-    assert details["method"] == "quadratic_implicit"
+    assert details["method"] == "implicit"
 
 
 def test_solver_methods_are_close_on_small_grid():
     model = RoughHestonModel(RoughHestonParams())
-    p_new = model.calculate(12, 20, method="quadratic_implicit")
+    p_new = model.calculate(12, 20, method="implicit")
     p_old = model.calculate(12, 20, method="explicit")
     assert abs(p_new - p_old) < 5e-3
 

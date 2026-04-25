@@ -43,31 +43,69 @@ print(custom_price)
 
 ## Method overview
 
-The solver prices a European call option under a rough Heston-style characteristic-function representation. For each Fourier node, it solves a fractional Riccati equation of the form
+The rough Heston model is a stochastic volatility model in which the variance process has rough, non-Markovian dynamics. Its volatility path is driven by a fractional kernel, so the current variance depends on the history of the process rather than only on the current state. This feature helps reproduce the steep short-maturity implied-volatility smiles observed in equity markets, but it also makes option pricing more numerically demanding than in the classical Heston model.
 
-```text
-h(t) = I^alpha F(h)(t),     F(h) = A + B h + C h^2.
-```
+For a European call option, the implementation uses a Fourier representation of the payoff. After damping the payoff transform with the parameter $R$, the price is computed by numerical integration over Fourier nodes $u$:
 
-The original explicit Adams corrector has the endpoint update
+$$
+C(S_0, K, t) =
+\frac{2 e^{-rt}}{2\pi}
+\int_{0}^{\infty}
+\operatorname{Re}\left(
+L(u - iR) \, \widehat{g}(iR - u)
+\right) \, du.
+$$
 
-```text
-h_{k+1} = G_k + a F(h_{k+1}^P),
-```
+Here $\widehat{g}$ is the transformed call payoff and $L$ is the rough Heston characteristic-function term. The main numerical cost is evaluating $L$ at every Fourier node. This reduces to solving a fractional Riccati equation for an auxiliary function $h$:
 
-where `h_{k+1}^P` is the predictor and `G_k` is the historical Adams-Moulton contribution. The new method instead uses
+$$
+h(t) = I^\alpha F(h)(t), \qquad F(h) = A + B h + C h^2.
+$$
 
-```text
-h_{k+1} = G_k + a F(h_{k+1}).
-```
+The fractional integral operator is
 
-Because `F(h)` is quadratic, the implicit endpoint equation is a scalar complex quadratic equation:
+$$
+I^\alpha f(t)
+=
+\frac{1}{\Gamma(\alpha)}
+\int_0^t (t-s)^{\alpha - 1} f(s) \, ds,
+$$
 
-```text
-a C h^2 + (a B - 1) h + (G_k + a A) = 0.
-```
+so the pricing problem ultimately depends on a nonlinear fractional differential or integral equation. The solver discretizes this equation on a time grid $t_k = k\Delta t$ and applies fractional Adams predictor-corrector recursions.
 
-Both roots are computed, and the root closest to the predictor is selected to maintain branch continuity.
+The first explicit component is the Adams-Bashforth predictor. It estimates the next value using only already-known history:
+
+$$
+h_{k+1}^{P}
+=
+\sum_{j=0}^{k} b_{k,j} F(h_j).
+$$
+
+The second explicit component is the standard Adams-Moulton corrector with the nonlinear endpoint evaluated at the predicted value:
+
+$$
+h_{k+1}
+=
+G_k + a F\left(h_{k+1}^{P}\right),
+$$
+
+where $G_k$ collects the historical Adams-Moulton terms and $a$ is the endpoint quadrature weight. This is the baseline exposed as `method="explicit"`.
+
+The quadratic-implicit method keeps the same predictor and the same historical Adams-Moulton contribution, but evaluates the endpoint nonlinearity at the unknown corrected value:
+
+$$
+h_{k+1}
+=
+G_k + a F\left(h_{k+1}\right).
+$$
+
+Because $F(h)$ is quadratic, this implicit endpoint equation is still cheap to solve. At each time step and Fourier node it becomes a scalar complex quadratic equation:
+
+$$
+a C h^2 + (a B - 1)h + (G_k + a A) = 0.
+$$
+
+Both roots are computed, and the root closest to the Adams-Bashforth predictor is selected to maintain branch continuity. This is the default solver exposed as `method="implicit"`.
 
 ## API reference
 
@@ -95,7 +133,7 @@ Dataclass containing model and numerical parameters.
 
 Model object that stores one `RoughHestonParams` instance and exposes pricing through `calculate`.
 
-### `RoughHestonModel.calculate(NOuter, NInner, method="quadratic_implicit", return_details=False)`
+### `RoughHestonModel.calculate(NOuter, NInner, method="implicit", return_details=False)`
 
 Prices one European call option.
 
@@ -103,7 +141,7 @@ Parameters:
 
 - `NOuter: int` - number of Gauss-Legendre nodes for Fourier integration.
 - `NInner: int` - number of time steps for the fractional Adams recursion. Must be even because Simpson quadrature is used for the final time integral.
-- `method: str` - solver choice. Use `"quadratic_implicit"` for the new quadratic-implicit method or `"explicit"` for the original explicit predictor-corrector baseline.
+- `method: str` - solver choice. Use `"implicit"` for the new quadratic-implicit method or `"explicit"` for the original explicit predictor-corrector baseline.
 - `return_details: bool` - if `True`, returns `(price, details)` instead of only `price`.
 
 Returns:
@@ -113,7 +151,7 @@ Returns:
 
 ## Demo notebook
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YOUR_GITHUB_USERNAME/rough-heston-qipc/blob/main/notebooks/demo.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/soya-git/rough_heston_qipc_project/blob/main/notebooks/demo.ipynb)
 
 The notebook contains:
 
@@ -123,15 +161,6 @@ The notebook contains:
 4. Convergence visualisation as `NInner` increases.
 5. Comparison with the explicit predictor-corrector baseline.
 
-## Suggested project experiments
-
-Use the demo notebook or `examples/benchmark.py` to evaluate:
-
-1. **Convergence in time steps**: fix `NOuter` and vary `NInner`.
-2. **Fourier quadrature convergence**: fix `NInner` and vary `NOuter`.
-3. **Runtime comparison**: compare `method="quadratic_implicit"` and `method="explicit"` on the same model and grid.
-4. **Accuracy-speed tradeoff**: use a high-resolution result as a reference and plot absolute error against runtime.
-5. **Parameter stress tests**: vary `alpha`, `rho`, and `nu` to test robustness under roughness, leverage, and vol-of-vol changes.
 
 ## Repository structure
 
