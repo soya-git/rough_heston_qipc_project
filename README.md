@@ -1,4 +1,4 @@
-# rough-heston-qipc
+# Rough Heston QIPC
 
 Rough Heston option pricing with a Quadratic-Implicit Fractional Adams Predictor-Corrector solver.
 
@@ -6,44 +6,52 @@ Rough Heston option pricing with a Quadratic-Implicit Fractional Adams Predictor
 
 Rough Heston pricing requires solving a fractional Riccati equation inside a Fourier pricing integral. Standard fractional Adams predictor-corrector methods use an explicit corrector evaluation, which can be sensitive when the nonlinear Riccati term becomes stiff or when the time grid is coarse. This package implements a quadratic-implicit corrector that solves the nonlinear endpoint equation exactly at each Fourier node, while preserving the same overall fractional Adams recursion structure.
 
-The project is designed for a computational finance course project: it provides a reusable Python package, a benchmark baseline, a Colab-ready demo notebook, tests, and GitHub Actions workflows for CI and PyPI publishing.
+This package is designed to efficiently compute European option prices under the rough Heston model. It provides a reusable Python implementation with both explicit and implicit fractional Adams solvers, benchmark examples, a Colab-ready demo notebook, and tests for the core numerical routines.
 
 ## Installation
-
-After publishing to PyPI:
 
 ```bash
 pip install rough-heston-qipc
 ```
 
-For local development from the repository root:
-
-```bash
-pip install -e ".[dev]"
-```
-
 ## Quick start
 
 ```python
-from rough_heston_qipc import RoughHestonModel, RoughHestonParams, timed_price
+from rough_heston_qipc import RoughHestonModel, RoughHestonParams
 
-model = RoughHestonModel(RoughHestonParams())
-price = model.calculate(NOuter=50, NInner=500)
+params = RoughHestonParams(
+    S0=100.0,
+    K=100.0,
+    r=0.0,
+    alpha=0.6,
+    lam=2.0,
+    theta=0.04,
+    rho=-0.5,
+    nu=0.05,
+    t=1.0,
+)
+
+model = RoughHestonModel(params)
+price = model.calculate(NOuter=50, NInner=500, method="implicit")
+
 print(f"price = {price:.12f}")
-
-price, elapsed = timed_price(NOuter=50, NInner=500)
-print(f"price = {price:.12f}, elapsed = {elapsed:.4f} seconds")
-
-params = RoughHestonParams(S0=1.0, K=1.0, alpha=0.6, rho=-0.5, nu=0.05)
-custom_model = RoughHestonModel(params)
-custom_price = custom_model.calculate(50, 500)
-explicit_baseline = custom_model.calculate(50, 500, method="explicit")
-print(custom_price)
 ```
 
 ## Method overview
 
-The rough Heston model is a stochastic volatility model in which the variance process has rough, non-Markovian dynamics. Its volatility path is driven by a fractional kernel, so the current variance depends on the history of the process rather than only on the current state. This feature helps reproduce the steep short-maturity implied-volatility smiles observed in equity markets, but it also makes option pricing more numerically demanding than in the classical Heston model.
+The rough Heston model is a stochastic volatility model where the stock price follows
+
+$$
+dS_t = S_t \sqrt{V_t}\, dW_t
+$$
+
+and the variance is driven by a fractional kernel:
+
+$$
+V_t = V_0 + \frac{1}{\Gamma(\alpha)} \int_0^t (t-s)^{\alpha - 1} \lambda(\theta - V_s)\, ds + \frac{1}{\Gamma(\alpha)} \int_0^t (t-s)^{\alpha - 1} \nu \sqrt{V_s}\, dB_s.
+$$
+
+The fractional kernel, with $\alpha \in (1/2, 1)$ and Brownian correlation $\rho$, makes the variance path rough and history-dependent, which helps capture short-maturity implied-volatility smiles but turns option pricing into a fractional Riccati problem.
 
 For a European call option, the implementation uses a Fourier representation of the payoff. After damping the payoff transform with the parameter $R$, the price is computed by numerical integration over Fourier nodes $u$:
 
@@ -51,12 +59,12 @@ $$
 C(S_0, K, t) =
 \frac{2 e^{-rt}}{2\pi}
 \int_{0}^{\infty}
-\operatorname{Re}\left(
+\mathrm{Re}\left(
 L(u - iR) \, \widehat{g}(iR - u)
 \right) \, du.
 $$
 
-Here $\widehat{g}$ is the transformed call payoff and $L$ is the rough Heston characteristic-function term. The main numerical cost is evaluating $L$ at every Fourier node. This reduces to solving a fractional Riccati equation for an auxiliary function $h$:
+Here $\mathrm{Re}(\cdot)$ means taking the real part of a complex number, $\widehat{g}$ is the transformed call payoff, and $L$ is the rough Heston characteristic-function term. The main numerical cost is evaluating $L$ at every Fourier node. This reduces to solving a fractional Riccati equation for an auxiliary function $h$:
 
 $$
 h(t) = I^\alpha F(h)(t), \qquad F(h) = A + B h + C h^2.
@@ -65,8 +73,7 @@ $$
 The fractional integral operator is
 
 $$
-I^\alpha f(t)
-=
+I^\alpha f(t) =
 \frac{1}{\Gamma(\alpha)}
 \int_0^t (t-s)^{\alpha - 1} f(s) \, ds,
 $$
@@ -76,16 +83,14 @@ so the pricing problem ultimately depends on a nonlinear fractional differential
 The first explicit component is the Adams-Bashforth predictor. It estimates the next value using only already-known history:
 
 $$
-h_{k+1}^{P}
-=
+h_{k+1}^{P} =
 \sum_{j=0}^{k} b_{k,j} F(h_j).
 $$
 
 The second explicit component is the standard Adams-Moulton corrector with the nonlinear endpoint evaluated at the predicted value:
 
 $$
-h_{k+1}
-=
+h_{k+1} =
 G_k + a F\left(h_{k+1}^{P}\right),
 $$
 
@@ -94,8 +99,7 @@ where $G_k$ collects the historical Adams-Moulton terms and $a$ is the endpoint 
 The quadratic-implicit method keeps the same predictor and the same historical Adams-Moulton contribution, but evaluates the endpoint nonlinearity at the unknown corrected value:
 
 $$
-h_{k+1}
-=
+h_{k+1} =
 G_k + a F\left(h_{k+1}\right).
 $$
 
@@ -133,9 +137,13 @@ Dataclass containing model and numerical parameters.
 
 Model object that stores one `RoughHestonParams` instance and exposes pricing through `calculate`.
 
-### `RoughHestonModel.calculate(NOuter, NInner, method="implicit", return_details=False)`
+#### `.calculate(NOuter, NInner, method="implicit", return_details=False)`
 
-Prices one European call option.
+Method of a `RoughHestonModel` object. Call it on an initialized model instance to price one European call option:
+
+```python
+price = model.calculate(NOuter=50, NInner=500, method="implicit")
+```
 
 Parameters:
 
@@ -160,29 +168,6 @@ The notebook contains:
 3. Runtime measurement.
 4. Convergence visualisation as `NInner` increases.
 5. Comparison with the explicit predictor-corrector baseline.
-
-
-## Repository structure
-
-```text
-rough-heston-qipc/
-|-- rough_heston_qipc/
-|   |-- __init__.py
-|   `-- _core.py
-|-- tests/
-|   `-- test_rough_heston_qipc.py
-|-- notebooks/
-|   `-- demo.ipynb
-|-- examples/
-|   `-- benchmark.py
-|-- .github/
-|   `-- workflows/
-|       |-- ci.yml
-|       `-- publish.yml
-|-- pyproject.toml
-|-- README.md
-`-- LICENSE
-```
 
 ## License
 
