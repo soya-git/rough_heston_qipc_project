@@ -23,19 +23,52 @@ params = RoughHestonParams(
     S0=100.0,
     K=100.0,
     r=0.0,
+    z=0.4,
     alpha=0.6,
     lam=2.0,
     theta=0.04,
     rho=-0.5,
     nu=0.05,
     t=1.0,
+    R=1.5,
+    u_lower=0.0,
+    u_upper=25.0,
 )
 
 model = RoughHestonModel(params)
-price = model.calculate(NOuter=50, NInner=500, method="implicit")
+price = model.price(
+    NOuter=50,
+    NInner=500,
+    method="implicit",
+    option_type="call",
+)
 
 print(f"price = {price:.12f}")
 ```
+
+To price a grid, pass lists directly in `RoughHestonParams`:
+
+```python
+grid_params = RoughHestonParams(
+    S0=100.0,
+    K=[90.0, 100.0, 110.0],
+    r=0.0,
+    z=0.4,
+    alpha=0.6,
+    lam=2.0,
+    theta=0.04,
+    rho=-0.5,
+    nu=0.05,
+    t=[0.5, 1.0],
+    R=1.5,
+    u_lower=0.0,
+    u_upper=25.0,
+)
+grid_model = RoughHestonModel(grid_params)
+rows = grid_model.price(NOuter=50, NInner=500, timed=True)
+```
+
+Each grid row contains only the list-valued parameters, `price`, and `elapsed` when `timed=True`.
 
 ## Method overview
 
@@ -53,7 +86,7 @@ $$
 
 The fractional kernel, with $\alpha \in (1/2, 1)$ and Brownian correlation $\rho$, makes the variance path rough and history-dependent, which helps capture short-maturity implied-volatility smiles but turns option pricing into a fractional Riccati problem.
 
-For a European call option, the implementation uses a Fourier representation of the payoff. After damping the payoff transform with the parameter $R$, the price is computed by numerical integration over Fourier nodes $u$:
+For a European option, the implementation uses a Fourier representation of the call payoff. After damping the payoff transform with the parameter $R$, the call price is computed by numerical integration over Fourier nodes $u$:
 
 $$
 C(S_0, K, t) =
@@ -64,7 +97,7 @@ L(u - iR) \, \widehat{g}(iR - u)
 \right) \, du.
 $$
 
-Here $\mathrm{Re}(\cdot)$ means taking the real part of a complex number, $\widehat{g}$ is the transformed call payoff, and $L$ is the rough Heston characteristic-function term. The main numerical cost is evaluating $L$ at every Fourier node. This reduces to solving a fractional Riccati equation for an auxiliary function $h$:
+Here $\mathrm{Re}(\cdot)$ means taking the real part of a complex number, $\widehat{g}$ is the transformed call payoff, and $L$ is the rough Heston characteristic-function term. Put prices are obtained from the computed call price by put-call parity. The main numerical cost is evaluating $L$ at every Fourier node. This reduces to solving a fractional Riccati equation for an auxiliary function $h$:
 
 $$
 h(t) = I^\alpha F(h)(t), \qquad F(h) = A + B h + C h^2.
@@ -115,34 +148,41 @@ Both roots are computed, and the root closest to the Adams-Bashforth predictor i
 
 ### `RoughHestonParams`
 
-Dataclass containing model and numerical parameters.
+Dataclass containing model and numerical parameters. Each field accepts either a scalar value or a list of values. If any field is a list, `RoughHestonModel.price` automatically prices every combination of list-valued parameters and returns grid rows. Parameter validity is checked during initialization.
 
 | Field | Type | Default | Description |
 |---|---:|---:|---|
-| `S0` | `float` | `1.0` | Initial stock price |
-| `K` | `float` | `1.0` | Strike price |
-| `r` | `float` | `0.0` | Risk-free rate |
-| `z` | `float` | `0.4` | Initial variance/volatility input used in the source implementation |
-| `alpha` | `float` | `0.6` | Fractional roughness parameter |
-| `lam` | `float` | `2.0` | Mean-reversion speed |
-| `theta` | `float` | `0.04` | Long-term variance level |
-| `rho` | `float` | `-0.5` | Spot-volatility correlation |
-| `nu` | `float` | `0.05` | Vol-of-vol parameter |
-| `t` | `float` | `1.0` | Maturity |
-| `R` | `float` | `1.5` | Fourier damping parameter |
-| `u_lower` | `float` | `0.0` | Lower Fourier integration bound |
-| `u_upper` | `float` | `25.0` | Upper Fourier integration bound |
+| `S0` | `float` or `list[float]` | Required | Initial stock price |
+| `K` | `float` or `list[float]` | Required | Strike price |
+| `r` | `float` or `list[float]` | Required | Risk-free rate |
+| `z` | `float` or `list[float]` | Required | Initial variance/volatility input used in the source implementation |
+| `alpha` | `float` or `list[float]` | Required | Fractional roughness parameter |
+| `lam` | `float` or `list[float]` | Required | Mean-reversion speed |
+| `theta` | `float` or `list[float]` | Required | Long-term variance level |
+| `rho` | `float` or `list[float]` | Required | Spot-volatility correlation |
+| `nu` | `float` or `list[float]` | Required | Vol-of-vol parameter |
+| `t` | `float` or `list[float]` | Required | Maturity |
+| `R` | `float` or `list[float]` | Required | Fourier damping parameter |
+| `u_lower` | `float` or `list[float]` | Required | Lower Fourier integration bound |
+| `u_upper` | `float` or `list[float]` | Required | Upper Fourier integration bound |
 
-### `RoughHestonModel(params=RoughHestonParams())`
+Validation requires `S0 > 0`, `K > 0`, `z >= 0`, `alpha in (0.5, 1.0)`, `lam > 0`, `theta >= 0`, `rho in [-1.0, 1.0]`, `nu >= 0`, `t > 0`, `R > 0`, and `u_upper > u_lower`.
 
-Model object that stores one `RoughHestonParams` instance and exposes pricing through `calculate`.
+### `RoughHestonModel(params)`
 
-#### `.calculate(NOuter, NInner, method="implicit", return_details=False)`
+Model object that stores one `RoughHestonParams` instance and exposes pricing through `price` and numerical grid experiments through `price_grid`.
 
-Method of a `RoughHestonModel` object. Call it on an initialized model instance to price one European call option:
+#### `.price(NOuter, NInner, method="implicit", option_type="call", timed=False, return_details=False)`
+
+Method of a `RoughHestonModel` object. Call it on an initialized model instance to price one European option:
 
 ```python
-price = model.calculate(NOuter=50, NInner=500, method="implicit")
+price = model.price(
+    NOuter=50,
+    NInner=500,
+    method="implicit",
+    option_type="call",
+)
 ```
 
 Parameters:
@@ -150,12 +190,35 @@ Parameters:
 - `NOuter: int` - number of Gauss-Legendre nodes for Fourier integration.
 - `NInner: int` - number of time steps for the fractional Adams recursion. Must be even because Simpson quadrature is used for the final time integral.
 - `method: str` - solver choice. Use `"implicit"` for the new quadratic-implicit method or `"explicit"` for the original explicit predictor-corrector baseline.
+- `option_type: str` - payoff type. Use `"call"` or `"put"`.
+- `timed: bool` - if `True`, also returns the elapsed time for the computation.
 - `return_details: bool` - if `True`, returns `(price, details)` instead of only `price`.
 
 Returns:
 
-- `float` if `return_details=False`.
+- `float` if `timed=False` and `return_details=False`.
+- `(float, float)` as `(price, elapsed)` if `timed=True` and `return_details=False`.
 - `(float, dict)` if `return_details=True`; details include Fourier nodes, weights, Riccati grid values, characteristic-function terms, and the selected method.
+- `list[dict]` if any `RoughHestonParams` field is a list. Each row contains only the list-valued parameter names and their current scalar values, plus `price`; if `timed=True`, each row also contains `elapsed`.
+
+#### `.price_grid(NOuter_values, NInner_values, method="implicit", option_type="call", timed=False)`
+
+Prices every combination of `NOuter_values` and `NInner_values` and returns a pandas DataFrame indexed by `NInner`, with `NOuter` values as columns:
+
+```python
+price_df = model.price_grid(
+    NOuter_values=[25, 50, 100],
+    NInner_values=[100, 200, 500],
+)
+
+price_df, elapsed_df = model.price_grid(
+    NOuter_values=[25, 50, 100],
+    NInner_values=[100, 200, 500],
+    timed=True,
+)
+```
+
+If `timed=False`, the method returns one DataFrame of prices. If `timed=True`, it returns `(price_df, elapsed_df)`. `price_grid` requires all `RoughHestonParams` fields to be scalar values; if any parameter is a list, it raises `ValueError`.
 
 ## Demo notebook
 
