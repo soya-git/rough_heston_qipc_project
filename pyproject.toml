@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rough-heston-qipc"
-version = "0.1.0"
+version = "0.2.0"
 description = "Rough Heston option pricing with a quadratic-implicit fractional Adams predictor-corrector solver."
 readme = "README.md"
 license = { text = "MIT" }
