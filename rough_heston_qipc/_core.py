@@ -3,6 +3,17 @@
 Rough Heston option pricing with a Quadratic-Implicit Fractional Adams
 Predictor-Corrector solver.
 
+Reference model
+---------------
+The characteristic-function representation follows El Euch and Rosenbaum
+(2019), "The characteristic function of rough Heston models".
+
+Numerical references
+--------------------
+The fractional Adams predictor-corrector discretization follows Diethelm,
+Ford, and Freed (2002, 2004). The fast hybrid Riccati method used for
+benchmark comparisons is Callegaro, Grasselli, and Pages (2021).
+
 Main entry points
 -----------------
 RoughHestonModel(params).price(NOuter, NInner, method="implicit", option_type="call")
@@ -33,7 +44,12 @@ ScalarOrGrid = float | Sequence[float]
 
 @dataclass(frozen=True)
 class RoughHestonParams:
-    """Model and numerical parameters matching the original MATLAB file."""
+    """Rough Heston model and numerical parameters.
+
+    The rough Heston parameterization is based on El Euch and Rosenbaum
+    (2019). ``z`` represents the initial variance input V0 used in the
+    characteristic-function formula.
+    """
 
     S0: ScalarOrGrid       # Initial stock price
     K: ScalarOrGrid        # Strike price
@@ -334,6 +350,9 @@ def riccati_coefficients(
 ) -> Tuple[np.ndarray, np.ndarray, float]:
     """Return A, B, C such that F(h) = A + B*h + C*h^2.
 
+    These coefficients are the fractional Riccati coefficients appearing in
+    the rough Heston characteristic function of El Euch and Rosenbaum (2019).
+
     The MATLAB code uses
         F(h) = 0.5 * [ -uL^2 - i*uL
                        + 2*lambda*(i*rho*nu*uL - 1)*h
@@ -360,6 +379,11 @@ def quadratic_implicit_corrector(
     eps: float = 1e-14,
 ) -> np.ndarray:
     """Closed-form implicit Adams corrector.
+
+    This package keeps the fractional Adams history terms of Diethelm, Ford,
+    and Freed (2002, 2004), but solves the quadratic endpoint equation
+    implicitly instead of evaluating the endpoint nonlinearity at the
+    predictor.
 
     The implicit corrector solves
         h = G + a_endpoint * F(h),
@@ -465,7 +489,8 @@ def _calculate_price(
 
     delta = p.t / NInner
 
-    # Fractional Adams weights.
+    # Fractional Adams weights from the Diethelm-Ford-Freed
+    # predictor-corrector discretization.
     a_constant = delta**p.alpha / gamma(p.alpha + 2.0)
     b_constant = delta**p.alpha / gamma(p.alpha + 1.0)
 
@@ -501,7 +526,7 @@ def _calculate_price(
             G = a0_values[k] * F0 + numF[:, 1 : k + 1] @ corrector_history_weights
 
         if method == "implicit":
-            # New method: solve h = G + a*F(h) exactly as a quadratic equation.
+            # QIPC: solve h = G + a*F(h) exactly as a quadratic equation.
             corrector = quadratic_implicit_corrector(
                 G=G,
                 predictor=predictor,

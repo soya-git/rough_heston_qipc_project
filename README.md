@@ -231,6 +231,19 @@ The notebook contains:
 3. Runtime measurement.
 4. Convergence visualisation as `NInner` increases.
 5. Comparison with the explicit predictor-corrector baseline.
+6. A Table 3 reference-price comparison against Hybrid and Adams results from Callegaro, Grasselli, and Pages (2021).
+
+## References
+
+Main reference:
+
+- El Euch, O., Rosenbaum, M. (2019). The characteristic function of rough Heston models. *Mathematical Finance*, 29(1), 3-38.
+
+Additional references:
+
+- Callegaro, G., Grasselli, M., Pages, G. (2021). Fast hybrid schemes for fractional Riccati equations (Rough is not so tough). *Mathematics of Operations Research*, 46(1), 221-254.
+- Diethelm, K., Ford, N. J., Freed, A. D. (2002). A predictor-corrector approach for the numerical solution of fractional differential equations. *Nonlinear Dynamics*, 29(1-4), 3-22.
+- Diethelm, K., Ford, N. J., Freed, A. D. (2004). Detailed error analysis for a fractional Adams method. *Numerical Algorithms*, 36(1), 31-52.
 
 ## License
 
